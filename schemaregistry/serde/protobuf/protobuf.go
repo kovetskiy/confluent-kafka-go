@@ -62,6 +62,8 @@ import (
 // Serializer represents a Protobuf serializer
 type Serializer struct {
 	serde.BaseSerializer
+
+	cache map[string]map[string]string
 }
 
 // Deserializer represents a Protobuf deserializer
@@ -126,7 +128,9 @@ func init() {
 
 // NewSerializer creates a Protobuf serializer for Protobuf-generated objects
 func NewSerializer(client schemaregistry.Client, serdeType serde.Type, conf *SerializerConfig) (*Serializer, error) {
-	s := &Serializer{}
+	s := &Serializer{
+		cache: make(map[string]map[string]string),
+	}
 	err := s.ConfigureSerializer(client, serdeType, &conf.SerializerConfig)
 	if err != nil {
 		return nil, err
@@ -197,12 +201,22 @@ func (s *Serializer) toProtobufSchema(msg proto.Message) (*desc.FileDescriptor, 
 	if err != nil {
 		return nil, nil, err
 	}
-	deps := make(map[string]string)
-	err = s.toDependencies(fileDesc, deps)
-	if err != nil {
-		return nil, nil, err
+
+	cached, ok := s.cache[fileDesc.GetName()]
+	if !ok {
+		deps := make(map[string]string)
+
+		err = s.toDependencies(fileDesc, deps)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		s.cache[fileDesc.GetName()] = deps
+
+		return fileDesc, deps, nil
 	}
-	return fileDesc, deps, nil
+
+	return fileDesc, cached, nil
 }
 
 func (s *Serializer) toDependencies(fileDesc *desc.FileDescriptor, deps map[string]string) error {
